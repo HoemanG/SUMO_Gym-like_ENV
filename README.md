@@ -13,6 +13,7 @@ The agent is trained using the Proximal Policy Optimization (PPO) algorithm prov
 *   **360-Degree Awareness:** The agent receives normalized sensor data regarding surrounding vehicles (Front, Back, Left, Right).
 *   **Discrete Action Space:** Simplified control scheme handling longitudinal (gas/brake) and lateral (lane change) movements.
 *   **Robust Training Pipeline:** Includes callbacks for model checkpointing, best-model saving, and detailed logging.
+*   **Random Map Training:** Handle map input as a list or a string to osm.sumocfg file(s) to load random or one dedicated map
 
 ## Prerequisites
 
