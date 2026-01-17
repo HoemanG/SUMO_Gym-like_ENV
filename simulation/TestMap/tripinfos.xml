@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-01-17T11:02:42.737175+07:00 by Eclipse SUMO GUI v1_25_0+0904-59bbc76848e
+<sumoConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="TestMap/osm.net.xml.gz"/>
+        <route-files value="TestMap/osm_pt.rou.xml,TestMap/osm.bicycle.trips.xml,TestMap/osm.motorcycle.trips.xml,TestMap/osm.passenger.trips.xml,TestMap/osm.pedestrian.rou.xml"/>
+        <additional-files value="TestMap/osm.poly.xml.gz,TestMap/osm_stops.add.xml,TestMap/output.add.xml"/>
+    </input>
+
+    <output>
+        <tripinfo-output value="TestMap/tripinfos.xml"/>
+        <stop-output value="TestMap/stopinfos.xml"/>
+        <statistic-output value="TestMap/stats.xml"/>
+    </output>
+
+    <processing>
+        <ignore-route-errors value="true"/>
+        <scale value="5.0"/>
+        <tls.actuated.jam-threshold value="30"/>
+    </processing>
+
+    <routing>
+        <device.rerouting.adaptation-steps value="18"/>
+        <device.rerouting.adaptation-interval value="10"/>
+    </routing>
+
+    <report>
+        <verbose value="true"/>
+        <no-step-log value="false"/>
+    </report>
+
+    <emissions>
+        <device.emissions.probability value="1.0"/>
+    </emissions>
+
+    <traci_server>
+        <remote-port value="37731"/>
+    </traci_server>
+
+    <gui_only>
+        <gui-settings-file value="TestMap/osm.view.xml"/>
+        <quit-on-end value="true"/>
+        <start value="true"/>
+    </gui_only>
+
+</sumoConfiguration>
+-->
+
+<tripinfos xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/tripinfo_file.xsd">
+    <tripinfo id="veh0" depart="0.00" departLane="-166333704#0_0" departPos="5.10" departSpeed="0.00" departDelay="0.00" arrival="49.00" arrivalLane="-1062498629#0_0" arrivalPos="325.06" arrivalSpeed="14.05" duration="49.00" routeLength="621.58" waitingTime="0.00" waitingCount="0" stopTime="0.00" timeLoss="4.54" rerouteNo="1" devices="tripinfo_veh0 routing_veh0 emissions_veh0" vType="veh_passenger" speedFactor="1.02" vaporized="">
+        <emissions CO_abs="738.62" CO2_abs="127266.66" HC_abs="4.95" PMx_abs="14.20" NOx_abs="44.04" fuel_abs="41258.14" electricity_abs="0.00"/>
+    </tripinfo>
+    <tripinfo id="veh0.1" depart="3.00" departLane="-166333704#0_0" departPos="5.10" departSpeed="0.00" departDelay="3.00" arrival="53.00" arrivalLane="-1062498629#0_0" arrivalPos="325.06" arrivalSpeed="12.90" duration="50.00" routeLength="621.58" waitingTime="0.00" waitingCount="0" stopTime="0.00" timeLoss="4.40" rerouteNo="1" devices="tripinfo_veh0.1 routing_veh0.1 emissions_veh0.1" vType="veh_passenger" speedFactor="1.01" vaporized="">
+        <emissions CO_abs="681.85" CO2_abs="122390.82" HC_abs="4.57" PMx_abs="14.04" NOx_abs="42.28" fuel_abs="39677.48" electricity_abs="0.00"/>
+    </tripinfo>
+    <tripinfo id="veh0.2" depart="6.00" departLane="-166333704#0_0" departPos="5.10" departSpeed="0.00" departDelay="6.00" arrival="58.00" arrivalLane="-1062498629#0_0" arrivalPos="325.06" arrivalSpeed="12.91" duration="52.00" routeLength="621.58" waitingTime="0.00" waitingCount="0" stopTime="0.00" timeLoss="4.94" rerouteNo="1" devices="tripinfo_veh0.2 routing_veh0.2 emissions_veh0.2" vType="veh_passenger" speedFactor="0.97" vaporized="">
+        <emissions CO_abs="696.91" CO2_abs="122311.08" HC_abs="4.65" PMx_abs="12.36" NOx_abs="41.94" fuel_abs="39651.56" electricity_abs="0.00"/>
+    </tripinfo>
+    <tripinfo id="veh0.3" depart="9.00" departLane="-166333704#0_0" departPos="5.10" departSpeed="0.00" departDelay="9.00" arrival="65.00" arrivalLane="-1062498629#0_0" arrivalPos="325.06" arrivalSpeed="12.06" duration="56.00" routeLength="621.58" waitingTime="0.00" waitingCount="0" stopTime="0.00" timeLoss="4.81" rerouteNo="1" devices="tripinfo_veh0.3 routing_veh0.3 emissions_veh0.3" vType="veh_passenger" speedFactor="0.89" vaporized="">
+        <emissions CO_abs="645.37" CO2_abs="127020.72" HC_abs="4.30" PMx_abs="12.55" NOx_abs="43.07" fuel_abs="41178.39" electricity_abs="0.00"/>
+    </tripinfo>
+    <tripinfo id="veh0.4" depart="12.00" departLane="-166333704#0_0" departPos="5.10" departSpeed="0.00" departDelay="12.00" arrival="73.00" arrivalLane="-1062498629#0_0" arrivalPos="325.06" arrivalSpeed="11.29" duration="61.00" routeLength="621.58" waitingTime="0.00" waitingCount="0" stopTime="0.00" timeLoss="5.57" rerouteNo="1" devices="tripinfo_veh0.4 routing_veh0.4 emissions_veh0.4" vType="veh_passenger" speedFactor="0.83" vaporized="">
+        <emissions CO_abs="477.78" CO2_abs="121231.53" HC_abs="3.19" PMx_abs="12.49" NOx_abs="41.16" fuel_abs="39301.74" electricity_abs="0.00"/>
+    </tripinfo>
+    <personinfo id="ped1.2" depart="21.00" type="ped_pedestrian" speedFactor="1.18" duration="60.00" waitingTime="1.00" timeLoss="8.62" traveltime="60.00">
+        <walk depart="21.00" departPos="0.00" arrival="81.00" arrivalPos="69.66" duration="60.00" routeLength="84.19" timeLoss="8.62" maxSpeed="1.64" waitingTime="1.00"/>
+    </personinfo>
+    <personinfo id="ped1" depart="21.00" type="ped_pedestrian" speedFactor="1.02" duration="66.00" waitingTime="0.00" timeLoss="6.55" traveltime="66.00">
+        <walk depart="21.00" departPos="0.00" arrival="87.00" arrivalPos="69.66" duration="66.00" routeLength="84.19" timeLoss="6.55" maxSpeed="1.42" waitingTime="0.00"/>
+    </personinfo>
+    <personinfo id="ped1.1" depart="21.00" type="ped_pedestrian" speedFactor="0.97" duration="70.00" waitingTime="0.00" timeLoss="7.71" traveltime="70.00">
+        <walk depart="21.00" departPos="0.00" arrival="91.00" arrivalPos="69.66" duration="70.00" routeLength="84.19" timeLoss="7.71" maxSpeed="1.35" waitingTime="0.00"/>
+    </personinfo>
+    <personinfo id="ped1.3" depart="21.00" type="ped_pedestrian" speedFactor="1.10" duration="70.00" waitingTime="2.00" timeLoss="15.01" traveltime="70.00">
+        <walk depart="21.00" departPos="0.00" arrival="91.00" arrivalPos="69.66" duration="70.00" routeLength="84.19" timeLoss="15.01" maxSpeed="1.53" waitingTime="2.00"/>
+    </personinfo>
+</tripinfos>
