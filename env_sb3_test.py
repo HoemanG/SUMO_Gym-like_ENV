@@ -4,10 +4,10 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 
 # Import your env
-from simulation.sumo_env import SumoEnv
+from simulation.continuous_sumo_env import SumoEnv
 
 # --- CONFIGURATION ---
-MAP_CONFIG = "maps/TestMap/osm.sumocfg"
+MAP_CONFIG = ["maps/CTU_map/osm.sumocfg", "maps/NinhKieuBridge/osm.sumocfg", "maps/NJ_TurnPike/osm.sumocfg"]
 
 class VisualLogCallback(BaseCallback):
     """
@@ -53,7 +53,7 @@ def main():
     env = SumoEnv(
         render=True, 
         map_config=MAP_CONFIG,
-        TRAFFIC_SCALE=3.0  # Lower scale slightly to see clearly
+        TRAFFIC_SCALE=7.0  # Lower scale slightly to see clearly
     )
 
     # 2. Initialize PPO
