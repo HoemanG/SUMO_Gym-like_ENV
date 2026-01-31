@@ -195,7 +195,7 @@ def main(step_per_agent=TOTAL_TIMESTEPS//2, skip_steer_train = False):
             render=False
         )
 
-            # Save a CHECKPOINT every 50,000 steps (safety save every ~30-60 mins)
+        # Save a CHECKPOINT every 50,000 steps (safety save every ~30-60 mins)
         checkpoint_callback = CheckpointCallback(
             save_freq=5000,
             save_path=STEER_CHECKPOINT_DIR,

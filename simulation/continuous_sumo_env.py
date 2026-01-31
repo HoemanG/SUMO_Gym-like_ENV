@@ -93,7 +93,7 @@ class SumoEnv(gym.Env):
 			dtype=np.float32
 			)
 		
-		self.step_count = 0
+		self.last_known_dist = 0.0
 	
 	def _get_passenger_edges(self) -> list:
 		all_edges = traci.edge.getIDList()
@@ -238,8 +238,14 @@ class SumoEnv(gym.Env):
 			# while the Lane Index (index) is its numerical position (starting from 0 for the rightmost lane) within an edge
 			lane_id = traci.vehicle.getLaneID(self.VEH_ID)
 
-			speed_limit = traci.lane.getMaxSpeed(laneID=lane_id) / self.MAX_SPEED # type: ignore # *
-
+			if lane_id == "":
+				speed_limit = 1.0
+				can_left, can_right = 0.0, 0.0
+				tls_dist, tls_state, turn_dist = 1.0, 1.0, 1.0
+			else:
+				# Normal logic
+				speed_limit = traci.lane.getMaxSpeed(laneID=lane_id) / self.MAX_SPEED
+			
 			# lane feasibility
 			road_id = traci.vehicle.getRoadID(self.VEH_ID)
 			num_lanes = traci.edge.getLaneNumber(road_id)
@@ -278,40 +284,65 @@ class SumoEnv(gym.Env):
 
 		return obs
 	
+	def _get_dist_to_destination(self):
+		try:
+			currrent_edge = traci.vehicle.getRoadID(self.VEH_ID)
+			if currrent_edge.startswith(":"): # type: ignore
+				if self.last_known_dist:
+					return self.last_known_dist
+				else:
+					return 0
+
+			if hasattr(self, "current_route_edges") and currrent_edge in self.current_route_edges:
+				idx = self.current_route_edges.index(current_edge)
+				remaining_edges = self.current_route_edges[idx:]
+			else:
+				return 0
+			
+			dist = 0.0
+			for e in remaining_edges:
+				dist += traci.lane.getLength(f"{e}_0")  # type: ignore
+
+			# subtract distance already driven on current edge
+			dist -= traci.vehicle.getLanePosition(self.VEH_ID) # type: ignore
+			self.last_known_dist = dist
+			return dist
+		except:
+			return 0.0
+
 
 	# reward function
-	def _calculate_rewards(self, action) -> float:
-		# goal: fast, no wiggle driving, safety, energy efficiency
-		# step_reward = speed - 0.5*steer - elec_consumption
+	def _calculate_reward(self, action):
+		# Weights (Tunable)
+		W_PROGRESS = 0.1 # (1 meter = 0.1 points)
+		W_ENERGY = -0.5  # Negative because energy is bad
+		W_COMFORT = -0.5 # Penalty for Jerk/Wiggle
 
-		current_speed = traci.vehicle.getSpeed(self.VEH_ID)
-	
-		# Get the limit of the current road
-		try:
-			lane_id = traci.vehicle.getLaneID(self.VEH_ID)
-			limit = traci.lane.getMaxSpeed(lane_id)
-		except:
-			limit = 50.0
 
-		# REWARD LOGIC:
-		# Reward speed up to the limit
-		if current_speed <= limit: # type: ignore
-			rew_speed = current_speed / limit # type: ignore
-		else:
-			# Penalize speeding! 
-			# If speed > limit, reward drops drastically
-			rew_speed = 1.0 - ((current_speed - limit) / limit) # type: ignore
+		dist = self._get_dist_to_destination()
+		if not hasattr(self, "prev_dist"):
+			self.prev_dist = dist
 
+		progress = self.prev_dist - dist
+		self.prev_dist = dist
+
+		# energy pen
 		elec = traci.vehicle.getElectricityConsumption(self.VEH_ID)
-		if elec is None or np.isnan(elec):
-			elec = 0.0
-		rew_elec = max(elec / self.MAX_ELEC, 0) # type: ignore
+		energy_penalty = elec / 120 # type: ignore
 
-		steer_cmd = action[0]
-		rew_steer = abs(steer_cmd)
+		if np.isnan(energy_penalty) or energy_penalty is None: energy_penalty = 0.0
 
-		return rew_speed - (0.5 * rew_steer) - rew_elec
+		if not hasattr(self, "prev_action"):
+			self.prev_action = action
+		
+		# calculate action change in steering/gas
+		action_delta = np.abs(action - self.prev_action)
+		wiggle_penalty = np.mean(action_delta) # avg change
+		self.prev_action = action
 
+		reward = (progress * W_PROGRESS) + (energy_penalty * W_ENERGY) + (wiggle_penalty * W_COMFORT)
+
+		return reward
 
 
 	def reset(self, seed=None, options=None):
@@ -347,8 +378,9 @@ class SumoEnv(gym.Env):
 		# launch sumo
 		traci.start(SumoCMD)
 
-		# advance a little few steps so that the traffic is ready (other vehicles are spawned)
-		for _ in range(5): traci.simulationStep()
+		# advance a little few steps so that the traffic is ready 
+		# (other vehicles are spawned, and not only be in on the edges of the map)
+		for _ in range(150): traci.simulationStep()
 
 		# 1. SETUP VEHICLE TYPE
 		try:
@@ -395,7 +427,7 @@ class SumoEnv(gym.Env):
 		# spawn the agent
 		spawned = False
 		ego_veh_tracked = False # Tracking vehicle: on?
-
+		max_attempts = 50
 		if self.test_mode:
 			while self.VEH_ID not in traci.vehicle.getIDList():
 				traci.simulationStep()
@@ -411,57 +443,97 @@ class SumoEnv(gym.Env):
 				traci.gui.trackVehicle("View #0", self.VEH_ID)
 				traci.gui.setZoom("View #0", 2000)
 		else:
-			while not spawned: # try to spawn the agent until success
-				try:
-					# advance 1 step to make sure the env is ready
-					traci.simulationStep()
+			# --- ROBUST "BEST EFFORT" ROUTE GENERATION ---
+			spawned = False
+			attempts = 0
+			
+			# Keep track of the best route we find
+			best_route_edges = None
+			max_route_length = 0.0
 
-					# pick a random route
+			# 1. Filter edges if not done already (exclude internal edges starting with :)
+			if not hasattr(self, 'drivable_edges') or not self.drivable_edges:
+				all_edges = traci.edge.getIDList()
+				self.drivable_edges = [e for e in all_edges if not e.startswith(":")]
+
+			# Try 20 times to find a route
+			while attempts < 20:
+				attempts += 1
+				try:
 					edge_start = random.choice(self.drivable_edges)
 					edge_end = random.choice(self.drivable_edges)
+					
+					if edge_start == edge_end:
+						continue
 
-					if edge_start != edge_end:
-						# ask SUMO for a route
-						route = traci.simulation.findRoute(edge_start, edge_end, self.VTYPE_ID)
-	
-						# Calculate approximate length in meters
-						# (We assume lane 0 length approximates edge length)
-						total_length = 0
-						for edge in route.edges: # type: ignore
-							try:
-								total_length += traci.lane.getLength(f"{edge}_0") # type: ignore
-							except:
-								pass
+					# Ask SUMO for path
+					route = traci.simulation.findRoute(edge_start, edge_end, self.VTYPE_ID)
+					
+					if not route.edges:
+						continue
 
-						if route.edges and len(route.edges) > 15 and total_length > 1000: # type: ignore
-							route_id = f"route_{random.randint(0, 1000000)}"
-							traci.route.add(route_id, route.edges) # type: ignore
+					# Calculate Length
+					current_length = 0.0
+					for edge_id in route.edges:
+						try:
+							# Assume lane 0 exists
+							current_length += traci.lane.getLength(f"{edge_id}_0")
+						except:
+							pass
+					
+					# LOGIC CHANGE:
+					# If it's a "Good Enough" route (>1000m), take it immediately.
+					if current_length > 1000.0:
+						best_route_edges = route.edges
+						max_route_length = current_length
+						break # Stop searching, we found a good one
+					
+					# Otherwise, remember it if it's the best so far
+					if current_length > max_route_length:
+						best_route_edges = route.edges
+						max_route_length = current_length
 
-							# --- FIX STARTS HERE ---
-							# Clean up previous failed attempts
-							# If the car is stuck in "pending" state, remove it before adding again.
-							try:
-								traci.vehicle.remove(self.VEH_ID)
-							except:
-								pass # If vehicle doesn't exist, just ignore
-							# add the car
-							traci.vehicle.add(self.VEH_ID, route_id, departPos="free", typeID=self.VTYPE_ID)
+				except Exception:
+					continue
+			
+			# --- SPAWN USING THE BEST ROUTE FOUND ---
+			if best_route_edges and len(best_route_edges) > 0:
+				try:
+					route_id = f"route_{random.randint(0, 1000000)}"
+					traci.route.add(route_id, best_route_edges)
+					
+					# Store for reward calculation
+					self.current_route_edges = best_route_edges 
+					
+					# Use "free" to prevent stacking
+					traci.vehicle.add(self.VEH_ID, route_id, departPos="free", typeID=self.VTYPE_ID)
+					
+					# Disable SUMO's internal logic so AI controls it
+					traci.vehicle.setSpeedMode(self.VEH_ID, 0)
+					traci.vehicle.setLaneChangeMode(self.VEH_ID, 0)
 
-							# disable safety guards and make the world imperfect
-							traci.vehicle.setSpeedMode(self.VEH_ID, 0)
-							traci.vehicle.setLaneChangeMode(self.VEH_ID, 0)
+					if self.render_mode and not ego_veh_tracked:
+						traci.gui.trackVehicle("View #0", self.VEH_ID)
+						traci.gui.setZoom("View #0", 2000)
 
-							# move simulation until we can spawn our ego car
-							traci.simulationStep()
-							if self.VEH_ID in traci.vehicle.getIDList():
-								print(f"Vehicle {self.VEH_ID} has successfully entered the road network!")
-								if not ego_veh_tracked and self.render_mode:
-									ego_veh_tracked = True
-									traci.gui.trackVehicle("View #0", self.VEH_ID)
-									traci.gui.setZoom("View #0", 600)
-								spawned = True
-				except:
-					continue # retry if sumo raises error
+					traci.simulationStep()
+					spawned = True
+					# Optional Debug:
+					# print(f"Spawned! Length: {max_route_length:.1f}m | Attempts: {attempts}")
+
+				except Exception as e:
+					print(f"Spawn Error: {e}")
+			
+			# If we STILL failed (e.g. map is empty or broken), reload.
+			if not spawned:
+				print(f"Critial Map Failure. Max len found: {max_route_length}. Reloading...")
+				return self.reset(seed=seed, options=options)
+			
+		if self.render_mode and spawned:
+			# Only track if the vehicle ACTUALLY exists
+			if self.VEH_ID in traci.vehicle.getIDList():
+				traci.gui.trackVehicle("View #0", self.VEH_ID)
+				traci.gui.setZoom("View #0", 2000) # Zoom in to the car
 
 		obs = self._get_obs()
 		info = {}
@@ -469,125 +541,103 @@ class SumoEnv(gym.Env):
 
 	
 	def step(self, action):
-
-		# reset counter
 		self.step_count += 1
 
-		# - apply action -
-		current_speed = traci.vehicle.getSpeed(self.VEH_ID)
-		SIM_STEPS = 10
-
-		# Longitudinal control
+		# 1. Physics Setup
+		steer_cmd = action[0]
 		accel_cmd = action[1]
+		
+		# Longitudinal control
 		if accel_cmd >= 0:
 			desired_accel = accel_cmd * self.MAX_ACCEL
 		else:
 			desired_accel = accel_cmd * self.MAX_DECEL
 
-		delta_time = 1.0 * SIM_STEPS
-		target_speed = current_speed + desired_accel * delta_time
+		SIM_STEPS = 10
+		delta_time = SIM_STEPS * traci.simulation.getDeltaT()
+		
+		# Current state for calculation
+		current_speed = traci.vehicle.getSpeed(self.VEH_ID)
+		target_speed = current_speed + (desired_accel * delta_time)
 		target_speed = max(0.0, min(target_speed, self.MAX_SPEED))
 		
-		# Send Speed
-		traci.vehicle.setSpeed(vehID=self.VEH_ID, speed=target_speed)
+		# Apply smooth speed change
+		traci.vehicle.slowDown(vehID=self.VEH_ID, speed=target_speed, duration=delta_time)
 
-		# lateral control
-		steer_cmd = action[0]
+		# Lateral control (Lane Change)
 		LC_THRESHOLD = 0.3
-		
-		target_lane = 0 
-		if steer_cmd < -LC_THRESHOLD:
-			target_lane = -1 # right
-		elif steer_cmd > LC_THRESHOLD:
-			target_lane = 1 # left
+		target_lane_offset = 0 
+		if steer_cmd < -LC_THRESHOLD: target_lane_offset = -1 
+		elif steer_cmd > LC_THRESHOLD: target_lane_offset = 1 
 
-		if target_lane != 0:
-			current_lane = traci.vehicle.getLaneIndex(self.VEH_ID)
+		if target_lane_offset != 0:
 			try:
+				current_lane = traci.vehicle.getLaneIndex(self.VEH_ID)
 				edge_id = traci.vehicle.getRoadID(self.VEH_ID)
 				num_lanes = traci.edge.getLaneNumber(edge_id)
-				desired_lane = current_lane + target_lane 
-				if 0 <= desired_lane and desired_lane < num_lanes: 
+				desired_lane = current_lane + target_lane_offset 
+				if 0 <= desired_lane < num_lanes: 
 					traci.vehicle.changeLane(self.VEH_ID, desired_lane, 2.0)
 			except:
 				pass
 
-		# Run simulation
+		# 2. Simulation Loop
 		reward = 0.0
 		terminated = False
 		truncated = False
-		
-		# Create accumulators for the 10-step duration
 		accumulated_energy = 0.0 
-		final_real_speed = 0.0
+		
+		# FIX: Initialize this here so it exists if the car crashes immediately
+		final_real_speed = 0.0 
 
-				# Timeout logic
+		for _ in range(SIM_STEPS):
+			traci.simulationStep()
+
+			# A. Check Existence / Arrival
+			if self.VEH_ID not in traci.vehicle.getIDList():
+				arrived_list = traci.simulation.getArrivedIDList()
+				if self.VEH_ID in arrived_list:
+					terminated = True
+					reward += 90.0 # Arrival Bonus
+					print("Vehicle Arrived!!!")
+				else:
+					terminated = True
+					reward -= 90.0 # Teleport/Crash Penalty
+					print("Vehicle Disappered!!!")
+				break 
+
+			# B. Check Collisions
+			collision_list = traci.simulation.getCollisions()
+			col_ids = [c.collider for c in collision_list] + [c.victim for c in collision_list]
+			if self.VEH_ID in col_ids:
+				terminated = True
+				reward -= 90.0 
+				print("Vehicle Crashed!!!")
+				break
+			
+			# C. Data Collection
+			final_real_speed = traci.vehicle.getSpeed(self.VEH_ID)
+			
+			e_consumption = traci.vehicle.getElectricityConsumption(self.VEH_ID)
+			if e_consumption is None or np.isnan(e_consumption): e_consumption = 0.0
+			accumulated_energy += e_consumption
+			
+			# D. Step Reward
+			reward += self._calculate_reward(action)
+
+		# 3. Finalize
 		if self.step_count >= self.MAX_EPISODE_STEPS:
 			truncated = True
-		else:
-			truncated = False
-			
-		if terminated:
-			truncated = False 
-
-
-		# If SUMO returned the garbage value (negative huge number), reset to 0
-		if final_real_speed < -100: 
-			final_real_speed = 0.0
 		
-		# update states
+		# Update Obs
 		obs = self._get_obs()
 		
+		# FIX: info dictionary built at the end
 		info = {
 			"real_speed": final_real_speed,
 			"real_energy": accumulated_energy, 
 			"is_success": 1 if (terminated and reward > 0) else 0 
 		}
-
-
-		for _ in range(SIM_STEPS):
-			traci.simulationStep()
-
-			# 1. CRITICAL: Check existence BEFORE asking for physics data
-			if self.VEH_ID not in traci.vehicle.getIDList():
-				# The car is gone. Why?
-				
-				# Check if it actually Arrived at the destination
-				arrived_list = traci.simulation.getArrivedIDList()
-				if self.VEH_ID in arrived_list:
-					terminated = True
-					reward += 90.0 # Real Success
-					info['is_success'] = True
-				else:
-					# It didn't arrive, but it's gone. 
-					# Could be a collision that removed it, or a teleport.
-					terminated = True
-					reward -= 90.0 # Penalty for disappearing without arriving
-					info['is_success'] = False
-				
-				# BREAK THE LOOP IMMEDIATELY so we don't ask for speed later
-				break 
-
-			# 2. Check Collisions (if it's still in the list but hit something)
-			collision_list = traci.simulation.getCollisions()
-			# getCollisions returns object IDs, we need to check if our car is involved
-			col_ids = [c.collider for c in collision_list] + [c.victim for c in collision_list]
-			if self.VEH_ID in col_ids:
-				terminated = True
-				reward -= 90.0 # Crash Penalty
-				info['is_success'] = False
-				break
-			
-			# get speed 
-			info['real_speed'] = traci.vehicle.getSpeed(self.VEH_ID)
-			e_consumption = traci.vehicle.getElectricityConsumption(self.VEH_ID)
-			if e_consumption is None or np.isnan(e_consumption):
-				e_consumption = 0.0
-			info['real_energy'] += e_consumption
-			# 3. Calculate Step Reward (Only if car exists)
-			reward += self._calculate_rewards(action)
-
-
 
 		return obs, reward, terminated, truncated, info
 
@@ -603,7 +653,7 @@ class SumoEnv(gym.Env):
 if __name__ == "__main__":
 	# 1. Init
 	# To Train (Random):
-	env = SumoEnv(map_config="TestMap/osm.sumocfg", render=True, test_mode=True, test_route="TestMap/test_route.rou.xml", delay=100)
+	env = SumoEnv(map_config="TestMap/osm.sumocfg", render=True, test_mode=False, test_route="TestMap/test_route.rou.xml", delay=100)
 	
 	# To Test (Fixed XML):
 	# env = SumoEnv(map_config="TestMap/osm.sumocfg", render=True, test_mode=True, test_xml="my_route.rou.xml")
@@ -620,11 +670,12 @@ if __name__ == "__main__":
 	for i in range(50):
 		# Random action
 		action = env.action_space.sample()
+		action[1] = np.random.uniform(-1.0, 1.0)
 		
 		obs, reward, terminated, truncated, info = env.step(action)
 		total_reward += reward
 		
-		print(f"Step {i} | Action: {action} | Reward: {reward:.2f} | Speed: {obs[0]:.2f} | Energy: {obs[2]:.2f}")
+		print(f"Step {env.step_count} | Action: {action} | Reward: {reward:.2f} | Speed: {obs[0]:.2f} | Energy: {obs[2]:.2f}")
 		
 		if terminated or truncated:
 			print("Episode Finished!")

@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-01-31T21:03:27.916901+07:00 by Eclipse SUMO sumo v1_25_0+0904-59bbc76848e
+<!-- generated on 2026-01-30T22:48:13.163226+07:00 by Eclipse SUMO GUI v1_25_0+0904-59bbc76848e
 <sumoConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
 
     <input>
-        <net-file value="maps/CTU_map/osm.net.xml.gz"/>
-        <route-files value="maps/CTU_map/osm.bicycle.trips.xml,maps/CTU_map/osm.motorcycle.trips.xml,maps/CTU_map/osm.passenger.trips.xml,maps/CTU_map/osm.pedestrian.rou.xml"/>
-        <additional-files value="maps/CTU_map/osm.poly.xml.gz,maps/CTU_map/output.add.xml"/>
+        <net-file value="TestMap/osm.net.xml.gz"/>
+        <route-files value="TestMap/osm_pt.rou.xml,TestMap/osm.bicycle.trips.xml,TestMap/osm.motorcycle.trips.xml,TestMap/osm.passenger.trips.xml,TestMap/osm.pedestrian.rou.xml"/>
+        <additional-files value="TestMap/osm.poly.xml.gz,TestMap/osm_stops.add.xml,TestMap/output.add.xml"/>
     </input>
 
     <output>
-        <tripinfo-output value="maps/CTU_map/tripinfos.xml"/>
-        <statistic-output value="maps/CTU_map/stats.xml"/>
+        <tripinfo-output value="TestMap/tripinfos.xml"/>
+        <stop-output value="TestMap/stopinfos.xml"/>
+        <statistic-output value="TestMap/stats.xml"/>
     </output>
 
     <processing>
@@ -36,14 +37,18 @@
     </emissions>
 
     <traci_server>
-        <remote-port value="40817"/>
+        <remote-port value="40093"/>
     </traci_server>
 
     <gui_only>
-        <gui-settings-file value="maps/CTU_map/osm.view.xml"/>
+        <gui-settings-file value="TestMap/osm.view.xml"/>
         <quit-on-end value="true"/>
         <start value="true"/>
-        <delay value="20"/>
+        <delay value="100"/>
     </gui_only>
 
 </sumoConfiguration>
+-->
+
+<tripinfos xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/tripinfo_file.xsd">
+</tripinfos>

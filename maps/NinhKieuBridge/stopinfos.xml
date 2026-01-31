@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-01-26T09:08:38.410623+07:00 by Eclipse SUMO sumo v1_25_0+0904-59bbc76848e
+<!-- generated on 2026-01-31T21:03:24.819655+07:00 by Eclipse SUMO sumo v1_25_0+0904-59bbc76848e
 <sumoConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
 
     <input>
@@ -37,14 +37,14 @@
     </emissions>
 
     <traci_server>
-        <remote-port value="46227"/>
+        <remote-port value="38245"/>
     </traci_server>
 
     <gui_only>
         <gui-settings-file value="maps/NinhKieuBridge/osm.view.xml"/>
         <quit-on-end value="true"/>
         <start value="true"/>
-        <delay value="0"/>
+        <delay value="20"/>
     </gui_only>
 
 </sumoConfiguration>

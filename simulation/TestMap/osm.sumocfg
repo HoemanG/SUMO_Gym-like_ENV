@@ -1,18 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-01-21T22:33:52.530906+07:00 by Eclipse SUMO sumo v1_25_0+0904-59bbc76848e
+<!-- generated on 2026-01-13T15:29:02.716514+07:00 by Eclipse SUMO sumo v1_25_0+0904-59bbc76848e
 -->
 
 <sumoConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
 
     <input>
         <net-file value="osm.net.xml.gz"/>
-        <route-files value="osm.passenger.trips.xml"/>
-        <additional-files value="osm.poly.xml.gz,output.add.xml"/>
+        <route-files value="osm_pt.rou.xml,osm.bicycle.trips.xml,osm.motorcycle.trips.xml,osm.passenger.trips.xml,osm.pedestrian.rou.xml"/>
+        <additional-files value="osm.poly.xml.gz,osm_stops.add.xml,output.add.xml"/>
     </input>
 
     <output>
         <tripinfo-output value="tripinfos.xml"/>
+        <stop-output value="stopinfos.xml"/>
         <statistic-output value="stats.xml"/>
     </output>
 
