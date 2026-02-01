@@ -380,7 +380,8 @@ class SumoEnv(gym.Env):
 
 		# advance a little few steps so that the traffic is ready 
 		# (other vehicles are spawned, and not only be in on the edges of the map)
-		for _ in range(150): traci.simulationStep()
+		# Sumo's flow = Static, timestep = random => random traffic
+		for _ in range(random.randint(150, 300)): traci.simulationStep()
 
 		# 1. SETUP VEHICLE TYPE
 		try:
@@ -435,6 +436,16 @@ class SumoEnv(gym.Env):
 			traci.vehicle.setType(self.VEH_ID, self.VTYPE_ID)
 			traci.vehicle.setSpeedMode(self.VEH_ID, 0)
 			traci.vehicle.setLaneChangeMode(self.VEH_ID, 0)
+
+			for _ in range(20):
+				traci.simulationStep()
+				if self.VEH_ID in traci.vehicle.getIDList():
+					break
+				# --------------------------
+				
+				# Check if it actually spawned
+				if self.VEH_ID in traci.vehicle.getIDList():
+					spawned = True
 
 			if self.VEH_ID in traci.vehicle.getIDList(): # double guard, meaningless
 				spawned = True
@@ -512,6 +523,16 @@ class SumoEnv(gym.Env):
 					traci.vehicle.setSpeedMode(self.VEH_ID, 0)
 					traci.vehicle.setLaneChangeMode(self.VEH_ID, 0)
 
+					for _ in range(20):
+						traci.simulationStep()
+						if self.VEH_ID in traci.vehicle.getIDList():
+							break
+					# --------------------------
+					
+					# Check if it actually spawned
+					if self.VEH_ID in traci.vehicle.getIDList():
+						spawned = True
+
 					if self.render_mode and not ego_veh_tracked:
 						traci.gui.trackVehicle("View #0", self.VEH_ID)
 						traci.gui.setZoom("View #0", 2000)
@@ -535,6 +556,7 @@ class SumoEnv(gym.Env):
 				traci.gui.trackVehicle("View #0", self.VEH_ID)
 				traci.gui.setZoom("View #0", 2000) # Zoom in to the car
 
+		self.stuck_time = 0
 		obs = self._get_obs()
 		info = {}
 		return obs, info		
@@ -556,15 +578,14 @@ class SumoEnv(gym.Env):
 		SIM_STEPS = 10
 		delta_time = SIM_STEPS * traci.simulation.getDeltaT()
 		
-		# Current state for calculation
+		# Apply smooth speed change
 		current_speed = traci.vehicle.getSpeed(self.VEH_ID)
 		target_speed = current_speed + (desired_accel * delta_time)
 		target_speed = max(0.0, min(target_speed, self.MAX_SPEED))
 		
-		# Apply smooth speed change
 		traci.vehicle.slowDown(vehID=self.VEH_ID, speed=target_speed, duration=delta_time)
 
-		# Lateral control (Lane Change)
+		# Lateral control
 		LC_THRESHOLD = 0.3
 		target_lane_offset = 0 
 		if steer_cmd < -LC_THRESHOLD: target_lane_offset = -1 
@@ -585,26 +606,24 @@ class SumoEnv(gym.Env):
 		reward = 0.0
 		terminated = False
 		truncated = False
-		accumulated_energy = 0.0 
 		
-		# FIX: Initialize this here so it exists if the car crashes immediately
-		final_real_speed = 0.0 
+		# Initialize variables BEFORE the loop
+		accumulated_energy = 0.0 
+		final_real_speed = 0.0
 
 		for _ in range(SIM_STEPS):
 			traci.simulationStep()
 
-			# A. Check Existence / Arrival
+			# A. Check Existence
 			if self.VEH_ID not in traci.vehicle.getIDList():
 				arrived_list = traci.simulation.getArrivedIDList()
 				if self.VEH_ID in arrived_list:
 					terminated = True
 					reward += 90.0 # Arrival Bonus
-					print("Vehicle Arrived!!!")
 				else:
 					terminated = True
 					reward -= 90.0 # Teleport/Crash Penalty
-					print("Vehicle Disappered!!!")
-				break 
+				break # Exit loop immediately
 
 			# B. Check Collisions
 			collision_list = traci.simulation.getCollisions()
@@ -612,10 +631,10 @@ class SumoEnv(gym.Env):
 			if self.VEH_ID in col_ids:
 				terminated = True
 				reward -= 90.0 
-				print("Vehicle Crashed!!!")
-				break
+				# print("Vehicle Crashed!!!")
+				break # Exit loop immediately
 			
-			# C. Data Collection
+			# C. Data Collection (Only happens if car exists)
 			final_real_speed = traci.vehicle.getSpeed(self.VEH_ID)
 			
 			e_consumption = traci.vehicle.getElectricityConsumption(self.VEH_ID)
@@ -625,18 +644,34 @@ class SumoEnv(gym.Env):
 			# D. Step Reward
 			reward += self._calculate_reward(action)
 
+		# --- AFTER LOOP (Do not use 'else' block here!) ---
+
 		# 3. Finalize
 		if self.step_count >= self.MAX_EPISODE_STEPS:
 			truncated = True
 		
 		# Update Obs
 		obs = self._get_obs()
+			
+		# Stuck Detection Logic
+		# (This uses the final_real_speed captured INSIDE the loop)
+		if final_real_speed < 0.5:
+			self.stuck_time += 1
+		else:
+			self.stuck_time = 0 
 		
-		# FIX: info dictionary built at the end
+		if self.stuck_time >= 50:
+			# print(f"Vehicle Stuck! (Speed 0 for 5s). Resetting.")
+			terminated = True
+			reward -= 50.0 
+			info_success = False
+		else:
+			info_success = 1 if (terminated and reward > 0) else 0
+
 		info = {
 			"real_speed": final_real_speed,
 			"real_energy": accumulated_energy, 
-			"is_success": 1 if (terminated and reward > 0) else 0 
+			"is_success": info_success
 		}
 
 		return obs, reward, terminated, truncated, info
