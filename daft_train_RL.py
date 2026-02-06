@@ -66,11 +66,15 @@ class DAFT_Callback(BaseCallback):
 		self.total_episodes = 0
 		self.print_every = 1
 		self.last_print = 0
+		self.sum_speed = 0.0
+		self.sum_energy = 0.0
+		self.sum_wiggle = 0.0
+		self.sum_safety = 0.0
 
 		# Open file once
 		self.file = open(self.file_name, "w")
 		self.file.write(
-			"episode,steps,ep_reward,avg_speed,energy,wiggle,safety,success,reason\n"
+			"episode,steps,ep_reward,avg_speed,total_energy,wiggle,safety,success,reason\n"
 		)
 
 	def _on_step(self) -> bool:
@@ -80,6 +84,11 @@ class DAFT_Callback(BaseCallback):
 		rewards = float(self.locals["rewards"][0])
 		done = self.locals["dones"][0]
 		action = self.locals["actions"][0]
+
+		self.sum_speed += infos.get("real_speed", 0.036)
+		self.sum_energy += infos.get("real_energy", 0.0)
+		self.sum_wiggle += infos.get("wiggle", 0.0)
+		self.sum_safety += infos.get("safety", 0.0)
 
 		self.ep_reward += rewards
 
@@ -106,10 +115,10 @@ class DAFT_Callback(BaseCallback):
 		if done:
 			self.total_episodes += 1
 
-			avg_speed = infos.get("real_speed", 0.0)
-			energy = infos.get("real_energy", 0.0)
-			wiggle = infos.get("wiggle", 0.0)
-			safety = infos.get("safety", 0.0)
+			avg_speed = self.sum_speed / max(1, self.ep_len)
+			energy = self.sum_energy
+			wiggle = self.sum_wiggle / max(1, self.ep_len)
+			safety = self.sum_safety / max(1, self.ep_len)
 			success = infos.get("is_success", 0)
 			success_reason = infos.get("success_reason", "not_found")
 
@@ -125,6 +134,11 @@ class DAFT_Callback(BaseCallback):
 				f"{success_reason}\n"
 			)
 			self.file.flush()
+
+			self.sum_speed = 0.0
+			self.sum_energy = 0.0
+			self.sum_wiggle = 0.0
+			self.sum_safety = 0.0
 
 			if self.verbose:
 				print(
