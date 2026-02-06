@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-02-01T21:08:25.101834+07:00 by Eclipse SUMO sumo v1_25_0+0904-59bbc76848e
+<!-- generated on 2026-02-06T14:43:17.833448+07:00 by Eclipse SUMO sumo v1_25_0+0904-59bbc76848e
 <sumoConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
 
     <input>
@@ -17,7 +17,7 @@
 
     <processing>
         <ignore-route-errors value="true"/>
-        <scale value="5.0"/>
+        <scale value="7.0"/>
         <tls.actuated.jam-threshold value="30"/>
     </processing>
 
@@ -37,7 +37,7 @@
     </emissions>
 
     <traci_server>
-        <remote-port value="38321"/>
+        <remote-port value="38493"/>
     </traci_server>
 
     <gui_only>
@@ -51,15 +51,15 @@
 -->
 
 <statistics xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/statistic_file.xsd">
-    <performance clockBegin="1769954905.11" clockEnd="1769954906.19" clockDuration="1.08" traciDuration="0.51" realTimeFactor="303.90" vehicleUpdatesPerSecond="17585.50" personUpdatesPerSecond="9489.78" begin="0.00" end="327.00" duration="327.00"/>
-    <vehicles loaded="221" inserted="157" running="92" waiting="4"/>
+    <performance clockBegin="1770363797.84" clockEnd="1770363798.44" clockDuration="0.60" traciDuration="0.18" realTimeFactor="389.92" vehicleUpdatesPerSecond="24905.88" personUpdatesPerSecond="12885.71" begin="0.00" end="232.00" duration="232.00"/>
+    <vehicles loaded="309" inserted="153" running="112" waiting="16"/>
     <teleports total="1" jam="0" yield="0" wrongLane="0"/>
     <safety collisions="1" emergencyStops="0" emergencyBraking="0"/>
-    <persons loaded="110" running="56" jammed="0"/>
+    <persons loaded="154" running="63" jammed="0"/>
     <personTeleports total="0" abortWait="0" wrongDest="0"/>
-    <vehicleTripStatistics count="54" routeLength="961.34" speed="8.06" duration="122.96" waitingTime="1.81" timeLoss="33.34" departDelay="8.46" departDelayWaiting="-1.00" totalTravelTime="6640.00" totalDepartDelay="511.81"/>
-    <bikeTripStatistics count="11" routeLength="578.77" speed="4.63" duration="123.36" waitingTime="3.00" timeLoss="18.17" departDelay="5.02" totalTravelTime="1357.00"/>
-    <pedestrianStatistics number="29" routeLength="150.42" duration="119.48" timeLoss="16.74"/>
+    <vehicleTripStatistics count="27" routeLength="583.44" speed="8.26" duration="74.96" waitingTime="1.26" timeLoss="25.57" departDelay="7.64" departDelayWaiting="-1.00" totalTravelTime="2024.00" totalDepartDelay="317.60"/>
+    <bikeTripStatistics count="14" routeLength="526.49" speed="4.57" duration="114.86" waitingTime="0.00" timeLoss="18.64" departDelay="7.95" totalTravelTime="1608.00"/>
+    <pedestrianStatistics number="21" routeLength="80.29" duration="71.76" timeLoss="12.06"/>
     <rideStatistics number="0"/>
     <transportStatistics number="0"/>
 </statistics>

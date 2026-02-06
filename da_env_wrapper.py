@@ -8,7 +8,7 @@ import numpy as np
 class SteeringOnlyWrapper(gym.ActionWrapper):
 	def __init__(self, env: gym.Env):
 		super().__init__(env)
-
+		self.env = env
 		self.action_space = gym.spaces.Box(
 			low=-1.0,
 			high=1.0,
@@ -21,6 +21,7 @@ class SteeringOnlyWrapper(gym.ActionWrapper):
 		steering = action[0]
 		throttle = 0.3
 
+		# steer_cmd = action[0], accel_cmd = action[1]
 		return np.array([steering, throttle], dtype=np.float32)
 	
 

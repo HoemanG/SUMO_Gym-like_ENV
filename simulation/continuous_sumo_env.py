@@ -1,4 +1,4 @@
-# Continuous SUMO gym-like env
+# Continuou action space SUMO gym-like env
 import os
 import sys
 import traci
@@ -53,7 +53,8 @@ class SumoEnv(gym.Env):
 		self.MAX_DECEL = 6.0  # m/s^2
 		self.MAX_ELEC = 120   # Wh/s
 		self.MAX_SLOPE = 20   # degrees
-		self.MAX_DIST = 100.0 # meters
+		self.MAX_DIST = 100 # meters
+		self.TARGET_DIST = 35.0 # meters, target for leader distant
 
 
 		# Handle string input and fix path
@@ -95,6 +96,12 @@ class SumoEnv(gym.Env):
 		
 		self.last_known_dist = 0.0
 	
+	def _veh_exists(self):
+		try:
+			return self.VEH_ID in traci.vehicle.getIDList()
+		except Exception:
+			return False
+		
 	def _get_passenger_edges(self) -> list:
 		all_edges = traci.edge.getIDList()
 		valid_edges = []
@@ -218,7 +225,7 @@ class SumoEnv(gym.Env):
 
 		# LEADER (2) --------
 		try:
-			leader = traci.vehicle.getLeader(self.VEH_ID, dist=self.MAX_DIST) # leader_id, leader_dist
+			leader = traci.vehicle.getLeader(self.VEH_ID, dist=self.MAX_DIST) # output = leader_id, leader_dist
 			if leader:
 				l_dist = leader[1] / self.MAX_DIST # *
 				l_speed = traci.vehicle.getSpeed(leader[0])
@@ -314,24 +321,30 @@ class SumoEnv(gym.Env):
 	# reward function
 	def _calculate_reward(self, action):
 		# Weights (Tunable)
-		W_PROGRESS = 0.1 # (1 meter = 0.1 points)
-		W_ENERGY = -0.5  # Negative because energy is bad
-		W_COMFORT = -0.5 # Penalty for Jerk/Wiggle
+		W_SPEED = 0.5 
+		W_ENERGY = -0.6  # Negative because energy is bad
+		W_COMFORT = -0.6 # Penalty for Jerk/Wiggle
+		W_SAFETY = -0.8
 
-
+		# unused
 		dist = self._get_dist_to_destination()
 		if not hasattr(self, "prev_dist"):
 			self.prev_dist = dist
 
+		# unused
 		progress = self.prev_dist - dist
 		self.prev_dist = dist
 
+		cur_speed = traci.vehicle.getSpeed(self.VEH_ID)
+		speed_reward = np.clip(cur_speed / self.MAX_SPEED, 0.0, 1.0) # type: ignore
+
 		# energy pen
 		elec = traci.vehicle.getElectricityConsumption(self.VEH_ID)
-		energy_penalty = elec / 120 # type: ignore
+		energy_penalty = elec / self.MAX_ELEC # type: ignore
 
 		if np.isnan(energy_penalty) or energy_penalty is None: energy_penalty = 0.0
 
+		
 		if not hasattr(self, "prev_action"):
 			self.prev_action = action
 		
@@ -340,7 +353,39 @@ class SumoEnv(gym.Env):
 		wiggle_penalty = np.mean(action_delta) # avg change
 		self.prev_action = action
 
-		reward = (progress * W_PROGRESS) + (energy_penalty * W_ENERGY) + (wiggle_penalty * W_COMFORT)
+		# getting leader information for safety
+		# the closer the leader dist to the target, the less the penalty
+		safety_penalty = 0.0
+		leader = traci.vehicle.getLeader(self.VEH_ID, self.MAX_DIST)
+		
+		# set target dist
+		if cur_speed <= 16.7:       # type: ignore
+			self.TARGET_DIST = 35
+		elif cur_speed <= 22.2:		# type: ignore
+			self.TARGET_DIST = 55
+		elif cur_speed <= 27.8:		# type: ignore
+			self.TARGET_DIST = 70
+		else:
+			self.TARGET_DIST = self.MAX_DIST
+
+
+		if leader is not None:
+			leader_dist = leader[1]
+
+			if leader_dist < self.TARGET_DIST: 
+				# strong penalty when too close
+				safety_penalty = (1 - (leader_dist / self.TARGET_DIST))
+				safety_penalty = np.clip(safety_penalty, 0.0, 1.0)
+			else:
+				# mild penalty when too far
+				safety_penalty = 0.1 * (leader_dist - self.TARGET_DIST) / self.TARGET_DIST
+				safety_penalty = np.clip(safety_penalty, 0.0, 1.0)
+		else:
+			safety_penalty = 0.0
+
+
+		reward = (speed_reward * W_SPEED) + (energy_penalty * W_ENERGY) + \
+			(wiggle_penalty * W_COMFORT) + (safety_penalty * W_SAFETY)
 
 		return reward
 
@@ -563,13 +608,13 @@ class SumoEnv(gym.Env):
 
 	
 	def step(self, action):
+		
 		self.step_count += 1
 
 		# 1. Physics Setup
 		steer_cmd = action[0]
 		accel_cmd = action[1]
 		
-		# Longitudinal control
 		if accel_cmd >= 0:
 			desired_accel = accel_cmd * self.MAX_ACCEL
 		else:
@@ -577,15 +622,25 @@ class SumoEnv(gym.Env):
 
 		SIM_STEPS = 10
 		delta_time = SIM_STEPS * traci.simulation.getDeltaT()
-		
-		# Apply smooth speed change
+		if not self._veh_exists():
+			info = {
+			"real_speed": 0.0,
+			"real_energy": 0.0, 
+			"wiggle": 0.0,
+			"safety": 0.0, 
+			"step_reward": 0.0,
+			"is_success": 0,
+		}
+
+			obs = np.zeros(self.observation_space.shape, dtype=np.float32)
+			return obs, 0.0, True, False, info
 		current_speed = traci.vehicle.getSpeed(self.VEH_ID)
 		target_speed = current_speed + (desired_accel * delta_time)
 		target_speed = max(0.0, min(target_speed, self.MAX_SPEED))
 		
 		traci.vehicle.slowDown(vehID=self.VEH_ID, speed=target_speed, duration=delta_time)
 
-		# Lateral control
+		# Lateral control (Same as before)
 		LC_THRESHOLD = 0.3
 		target_lane_offset = 0 
 		if steer_cmd < -LC_THRESHOLD: target_lane_offset = -1 
@@ -607,9 +662,10 @@ class SumoEnv(gym.Env):
 		terminated = False
 		truncated = False
 		
-		# Initialize variables BEFORE the loop
+		# --- NEW ACCUMULATORS ---
 		accumulated_energy = 0.0 
-		final_real_speed = 0.0
+		sum_speed = 0.0 # To calculate average
+		valid_steps = 0 # To count how long we survived
 
 		for _ in range(SIM_STEPS):
 			traci.simulationStep()
@@ -619,11 +675,11 @@ class SumoEnv(gym.Env):
 				arrived_list = traci.simulation.getArrivedIDList()
 				if self.VEH_ID in arrived_list:
 					terminated = True
-					reward += 90.0 # Arrival Bonus
+					reward += 90.0
 				else:
 					terminated = True
-					reward -= 90.0 # Teleport/Crash Penalty
-				break # Exit loop immediately
+					reward -= 90.0 # Crash/Teleport
+				break 
 
 			# B. Check Collisions
 			collision_list = traci.simulation.getCollisions()
@@ -631,47 +687,81 @@ class SumoEnv(gym.Env):
 			if self.VEH_ID in col_ids:
 				terminated = True
 				reward -= 90.0 
-				# print("Vehicle Crashed!!!")
-				break # Exit loop immediately
+				break 
 			
-			# C. Data Collection (Only happens if car exists)
-			final_real_speed = traci.vehicle.getSpeed(self.VEH_ID)
+			# C. Data Collection
+			# Capture speed EVERY micro-step
+			v = traci.vehicle.getSpeed(self.VEH_ID)
+			sum_speed += v
+			valid_steps += 1
 			
-			e_consumption = traci.vehicle.getElectricityConsumption(self.VEH_ID)
-			if e_consumption is None or np.isnan(e_consumption): e_consumption = 0.0
-			accumulated_energy += e_consumption
+			e_cons = traci.vehicle.getElectricityConsumption(self.VEH_ID)
+			if e_cons is None or np.isnan(e_cons): e_cons = 0.0
+			accumulated_energy += e_cons
 			
 			# D. Step Reward
 			reward += self._calculate_reward(action)
 
-		# --- AFTER LOOP (Do not use 'else' block here!) ---
+		# --- AFTER LOOP ---
 
-		# 3. Finalize
 		if self.step_count >= self.MAX_EPISODE_STEPS:
 			truncated = True
 		
-		# Update Obs
 		obs = self._get_obs()
 			
-		# Stuck Detection Logic
-		# (This uses the final_real_speed captured INSIDE the loop)
-		if final_real_speed < 0.5:
+		# CALCULATE AVERAGE SPEED
+		# If valid_steps is 0 (instant crash), avg_speed is 0.
+		avg_real_speed = sum_speed / max(1, valid_steps)
+
+		# Stuck Detection (Use Average Speed now)
+		if avg_real_speed < 0.5:
 			self.stuck_time += 1
 		else:
 			self.stuck_time = 0 
 		
-		if self.stuck_time >= 50:
-			# print(f"Vehicle Stuck! (Speed 0 for 5s). Resetting.")
+		if self.stuck_time > 50:
 			terminated = True
-			reward -= 50.0 
+			reward -= 90.0 
 			info_success = False
 		else:
 			info_success = 1 if (terminated and reward > 0) else 0
 
+		if not hasattr(self, "prev_action"):
+			self.prev_action = action
+		
+		# calculate action change in steering/gas
+		action_delta = np.abs(action - self.prev_action)
+		wiggle_stat = np.mean(action_delta) # speed or lane changing count as wiggling
+		self.prev_action = action
+
+		# get leader
+		if self._veh_exists():
+			leader = traci.vehicle.getLeader(self.VEH_ID, self.MAX_DIST)
+		else:
+			leader = None
+
+		if leader is not None:
+			leader_dist = leader[1]
+
+			# safety penalty can be used for calculating reward and report error in ego veh and leader
+			if leader_dist < self.TARGET_DIST: 
+				# strong penalty when too close
+				safety_penalty = (1 - (leader_dist / self.TARGET_DIST))
+				safety_penalty = np.clip(safety_penalty, 0.0, 1.0)
+			else:
+				# mild penalty when too far
+				safety_penalty = 0.1 * (leader_dist - self.TARGET_DIST) / self.TARGET_DIST
+				safety_penalty = np.clip(safety_penalty, 0.0, 1.0)
+		else:
+			safety_penalty = 0.0
+
 		info = {
-			"real_speed": final_real_speed,
+			"real_speed": avg_real_speed, # Reporting Average now
 			"real_energy": accumulated_energy, 
-			"is_success": info_success
+			"wiggle": wiggle_stat,
+			"safety": safety_penalty, 
+			"step_reward": reward,
+			"is_success": info_success,
 		}
 
 		return obs, reward, terminated, truncated, info
