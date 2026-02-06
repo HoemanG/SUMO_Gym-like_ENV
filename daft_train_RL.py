@@ -70,7 +70,7 @@ class DAFT_Callback(BaseCallback):
 		# Open file once
 		self.file = open(self.file_name, "w")
 		self.file.write(
-			"episode,steps,ep_reward,avg_speed,energy,wiggle,safety,success\n"
+			"episode,steps,ep_reward,avg_speed,energy,wiggle,safety,success,reason\n"
 		)
 
 	def _on_step(self) -> bool:
@@ -111,6 +111,7 @@ class DAFT_Callback(BaseCallback):
 			wiggle = infos.get("wiggle", 0.0)
 			safety = infos.get("safety", 0.0)
 			success = infos.get("is_success", 0)
+			success_reason = infos.get("success_reason", "not_found")
 
 			self.file.write(
 				f"{self.total_episodes},"
@@ -120,7 +121,8 @@ class DAFT_Callback(BaseCallback):
 				f"{energy:.3f},"
 				f"{wiggle:.3f},"
 				f"{safety:.3f},"
-				f"{success}\n"
+				f"{success},"
+				f"{success_reason}\n"
 			)
 			self.file.flush()
 
@@ -141,7 +143,7 @@ class DAFT_Callback(BaseCallback):
 			if self.soft_stop_armed:
 				print(
 					f"[DAFT:{self.model_type}] "
-					f"SOFT STOP @ t={self.num_timesteps:,} — waiting episode end ✓"
+					f"SOFT STOP @ t={self.num_timesteps:,} — waiting episode end "
 				)
 				return False
 

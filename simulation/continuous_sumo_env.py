@@ -1,4 +1,4 @@
-# Continuou action space SUMO gym-like env
+# Continuous action space SUMO gym-like env
 import os
 import sys
 import traci
@@ -205,9 +205,13 @@ class SumoEnv(gym.Env):
 			slope = traci.vehicle.getSlope(self.VEH_ID) / self.MAX_SLOPE # type: ignore # *
 			lat_offset = traci.vehicle.getLateralLanePosition(self.VEH_ID) # *
 
-			car_angle = traci.vehicle.getAngle(self.VEH_ID)
-			edge_angle = traci.vehicle.getAngle(self.VEH_ID) # getting exact lane angle is kinda complex in traci
-			heading_error = ((car_angle - edge_angle) % 360) / 360.0  # type: ignore # *
+			# car_angle = traci.vehicle.getAngle(self.VEH_ID)
+			# edge_angle = traci.vehicle.getAngle(self.VEH_ID) # getting exact lane angle is kinda complex in traci
+			# heading_error = ((car_angle - edge_angle) % 360) / 360.0  # type: ignore # *
+
+			# Heading error is conceptually important, but in SUMO lane-change control
+			# vehicle yaw is not independently controllable, so this signal is degenerate.
+			heading_error = 0.0
 
 			steer_angle = traci.vehicle.getAngle(self.VEH_ID) / 360 # type: ignore # *
 
@@ -293,14 +297,14 @@ class SumoEnv(gym.Env):
 	
 	def _get_dist_to_destination(self):
 		try:
-			currrent_edge = traci.vehicle.getRoadID(self.VEH_ID)
-			if currrent_edge.startswith(":"): # type: ignore
+			current_edge = traci.vehicle.getRoadID(self.VEH_ID)
+			if current_edge.startswith(":"): # type: ignore
 				if self.last_known_dist:
 					return self.last_known_dist
 				else:
 					return 0
 
-			if hasattr(self, "current_route_edges") and currrent_edge in self.current_route_edges:
+			if hasattr(self, "current_route_edges") and current_edge in self.current_route_edges:
 				idx = self.current_route_edges.index(current_edge)
 				remaining_edges = self.current_route_edges[idx:]
 			else:
@@ -321,26 +325,27 @@ class SumoEnv(gym.Env):
 	# reward function
 	def _calculate_reward(self, action):
 		# Weights (Tunable)
-		W_SPEED = 0.5 
+		W_SPEED = 0.5
+		W_PROGRESS = 0.5
 		W_ENERGY = -0.6  # Negative because energy is bad
 		W_COMFORT = -0.6 # Penalty for Jerk/Wiggle
 		W_SAFETY = -0.8
 
-		# unused
 		dist = self._get_dist_to_destination()
 		if not hasattr(self, "prev_dist"):
 			self.prev_dist = dist
 
-		# unused
-		progress = self.prev_dist - dist
+		progress_reward = np.clip(self.prev_dist - dist, -1.0, 1.0)
 		self.prev_dist = dist
 
 		cur_speed = traci.vehicle.getSpeed(self.VEH_ID)
-		speed_reward = np.clip(cur_speed / self.MAX_SPEED, 0.0, 1.0) # type: ignore
+		speed_reward = cur_speed / self.MAX_SPEED
+		speed_reward *= 0.5 + 0.5 * max(progress_reward, 0.0) # type: ignore
 
 		# energy pen
 		elec = traci.vehicle.getElectricityConsumption(self.VEH_ID)
 		energy_penalty = elec / self.MAX_ELEC # type: ignore
+		energy_penalty = np.clip(energy_penalty, 0.0, 1.0)
 
 		if np.isnan(energy_penalty) or energy_penalty is None: energy_penalty = 0.0
 
@@ -377,14 +382,18 @@ class SumoEnv(gym.Env):
 				safety_penalty = (1 - (leader_dist / self.TARGET_DIST))
 				safety_penalty = np.clip(safety_penalty, 0.0, 1.0)
 			else:
-				# mild penalty when too far
-				safety_penalty = 0.1 * (leader_dist - self.TARGET_DIST) / self.TARGET_DIST
-				safety_penalty = np.clip(safety_penalty, 0.0, 1.0)
+				# no penalty when far
+				safety_penalty = 0.0
 		else:
 			safety_penalty = 0.0
 
+		speed_reward = np.nan_to_num(speed_reward, nan=0.0, posinf=0.0, neginf=0.0) 
+		energy_penalty = np.nan_to_num(energy_penalty, nan=0.0, posinf=0.0, neginf=0.0) 
+		wiggle_penalty = np.nan_to_num(wiggle_penalty, nan=0.0, posinf=0.0, neginf=0.0) 
+		safety_penalty = np.nan_to_num(safety_penalty, nan=0.0, posinf=0.0, neginf=0.0)
+		progress_reward = np.nan_to_num(progress_reward, nan=0.0, posinf=0.0, neginf=0.0)
 
-		reward = (speed_reward * W_SPEED) + (energy_penalty * W_ENERGY) + \
+		reward = (speed_reward * W_SPEED) + (progress_reward * W_PROGRESS) + (energy_penalty * W_ENERGY) + \
 			(wiggle_penalty * W_COMFORT) + (safety_penalty * W_SAFETY)
 
 		return reward
@@ -423,6 +432,12 @@ class SumoEnv(gym.Env):
 		# launch sumo
 		traci.start(SumoCMD)
 
+		self._success = False
+
+		if hasattr(self, "prev_action"):
+			del self.prev_action
+		if hasattr(self, "prev_dist"):
+			del self.prev_dist
 		# advance a little few steps so that the traffic is ready 
 		# (other vehicles are spawned, and not only be in on the edges of the map)
 		# Sumo's flow = Static, timestep = random => random traffic
@@ -667,26 +682,37 @@ class SumoEnv(gym.Env):
 		sum_speed = 0.0 # To calculate average
 		valid_steps = 0 # To count how long we survived
 
+		
+
 		for _ in range(SIM_STEPS):
 			traci.simulationStep()
 
+			if not self._success and self._get_dist_to_destination() < 3.0:
+				self._success = True
+			
 			# A. Check Existence
 			if self.VEH_ID not in traci.vehicle.getIDList():
-				arrived_list = traci.simulation.getArrivedIDList()
-				if self.VEH_ID in arrived_list:
-					terminated = True
-					reward += 90.0
-				else:
-					terminated = True
-					reward -= 90.0 # Crash/Teleport
-				break 
+				terminated = True
 
+				# Teleport detection (explicit)
+				teleported_ids = traci.simulation.getStartingTeleportIDList()
+				was_teleported = self.VEH_ID in teleported_ids
+
+				# Success should be STATE-based, not disappearance-based
+				# Assumes you define success elsewhere (distance check, flag, etc.)
+				if was_teleported:
+					reward -= 50
+				else:
+					reward -= 150
+
+				break
 			# B. Check Collisions
 			collision_list = traci.simulation.getCollisions()
 			col_ids = [c.collider for c in collision_list] + [c.victim for c in collision_list]
 			if self.VEH_ID in col_ids:
 				terminated = True
-				reward -= 90.0 
+				self._success = False
+				reward -= 200 
 				break 
 			
 			# C. Data Collection
@@ -700,9 +726,16 @@ class SumoEnv(gym.Env):
 			accumulated_energy += e_cons
 			
 			# D. Step Reward
-			reward += self._calculate_reward(action)
+			reward += self._calculate_reward(action) / SIM_STEPS
+			if (sum_speed/valid_steps) < 1.0:
+				reward -= 0.2
 
 		# --- AFTER LOOP ---
+
+		if self._success:
+			terminated = True
+			reward += 100
+			info_success = 1
 
 		if self.step_count >= self.MAX_EPISODE_STEPS:
 			truncated = True
@@ -719,12 +752,16 @@ class SumoEnv(gym.Env):
 		else:
 			self.stuck_time = 0 
 		
-		if self.stuck_time > 50:
+		if self._success:
+			info_success = 1
+		elif self.stuck_time > 50 and not terminated:
 			terminated = True
-			reward -= 90.0 
-			info_success = False
+			reward -= 200
+			info_success = 0
 		else:
-			info_success = 1 if (terminated and reward > 0) else 0
+			info_success = 0
+
+		
 
 		if not hasattr(self, "prev_action"):
 			self.prev_action = action
@@ -762,6 +799,13 @@ class SumoEnv(gym.Env):
 			"safety": safety_penalty, 
 			"step_reward": reward,
 			"is_success": info_success,
+			"success_reason": (
+				"goal" if self._success else
+				"collision" if terminated and reward < -150 else
+				"stuck" if self.stuck_time > 50 else
+				"timeout" if truncated else
+				"running"
+			)
 		}
 
 		return obs, reward, terminated, truncated, info
