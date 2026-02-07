@@ -454,7 +454,8 @@ class SumoEnv(gym.Env):
 			traci.vehicletype.copy(source_type, self.VTYPE_ID)
 			traci.vehicletype.setVehicleClass(self.VTYPE_ID, "passenger")
 			traci.vehicletype.setColor(self.VTYPE_ID, (0, 255, 0)) 
-			traci.vehicletype.setMass(self.VTYPE_ID, 2911)
+			# CORRECT
+			traci.vehicletype.setParameter(self.VTYPE_ID, "mass", "2911")
 			traci.vehicletype.setLength(self.VTYPE_ID, 5.1181)
 			traci.vehicletype.setEmissionClass(self.VTYPE_ID, "MMPEVEM")
 			
@@ -475,8 +476,10 @@ class SumoEnv(gym.Env):
 
 			# Apply Imperfection to Background Traffic
 			for v_type in existing_types:
-				traci.vehicletype.setImperfection(v_type, self.imperfection)
-				traci.vehicletype.setImpatience(v_type, self.impatience)
+				# CORRECT
+				# "sigma" is the parameter name for driver imperfection (0=perfect, 1=bad)
+				traci.vehicletype.setParameter(v_type, "sigma", str(self.imperfection))
+				traci.vehicletype.setParameter(v_type, "impatience", str(self.impatience))
 
 		except Exception as e:
 			print(f"Error defining vType: {e}")
